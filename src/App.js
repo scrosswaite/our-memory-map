@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
-import { MapContainer, TileLayer, Marker, Popup, Tooltip } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 
 import { db, storage } from "./firebase";
 import {
@@ -13,6 +13,7 @@ import {
   serverTimestamp,
   deleteDoc,
   doc,
+  updateDoc,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -157,7 +158,7 @@ function getImages(memory) {
   return arr;
 }
 
-/* ---------------- Firestore: add a memory ---------------- */
+/* ---------------- Firestore: add / update a memory ---------------- */
 async function addMemory({ title, description, lat, lng, file, category, color }) {
   let imageUrl = "";
 
@@ -177,6 +178,31 @@ async function addMemory({ title, description, lat, lng, file, category, color }
     color: normalizeColor(color) || null,         // explicit pin colour
     createdAt: serverTimestamp(),
   });
+}
+
+async function updateMemory(id, { title, description, lat, lng, file, removeImage, category, color, existingImageUrl }) {
+  const payload = {
+    title,
+    description: description ?? "",
+    coordinates: new GeoPoint(Number(lat), Number(lng)),
+    category: (category || "").trim(),
+    color: normalizeColor(color) || null,
+  };
+
+  // handle image changes
+  if (file) {
+    const path = `memories/${Date.now()}-${file.name}`;
+    const storageRef = ref(storage, path);
+    await uploadBytes(storageRef, file);
+    const newUrl = await getDownloadURL(storageRef);
+    payload.imageUrl = newUrl;
+  } else if (removeImage) {
+    payload.imageUrl = null;
+  } else if (existingImageUrl) {
+    // keep it as-is (no field included = unchanged)
+  }
+
+  await updateDoc(doc(db, "memories", id), payload);
 }
 
 /* ---------------- Add Memory Form (toggleable) ---------------- */
@@ -219,141 +245,129 @@ function AddMemoryForm({ onClose }) {
       </div>
 
       <div className="memory-form__row">
-        <input
-          className="memory-form__input"
-          placeholder="Title *"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
-        />
+        <input className="memory-form__input" placeholder="Title *" value={title} onChange={(e) => setTitle(e.target.value)} required />
       </div>
 
       <div className="memory-form__row">
-        <textarea
-          className="memory-form__input"
-          placeholder="Description (optional)"
-          rows={3}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-        />
+        <textarea className="memory-form__input" placeholder="Description (optional)" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
       </div>
 
       <div className="memory-form__grid-2">
-        <input
-          className="memory-form__input"
-          placeholder="Latitude *"
-          value={lat}
-          onChange={(e) => setLat(e.target.value)}
-          required
-        />
-        <input
-          className="memory-form__input"
-          placeholder="Longitude *"
-          value={lng}
-          onChange={(e) => setLng(e.target.value)}
-          required
-        />
+        <input className="memory-form__input" placeholder="Latitude *" value={lat} onChange={(e) => setLat(e.target.value)} required />
+        <input className="memory-form__input" placeholder="Longitude *" value={lng} onChange={(e) => setLng(e.target.value)} required />
       </div>
 
       <div className="memory-form__grid-2">
-        {/* Free-text category */}
-        <input
-          className="memory-form__input"
-          placeholder="Category (anything)"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-        />
-
-        {/* Pick marker colour */}
+        <input className="memory-form__input" placeholder="Category (anything)" value={category} onChange={(e) => setCategory(e.target.value)} />
         <div className="memory-form__color memory-form__input">
           <label htmlFor="pinColor">Marker colour</label>
-          <input
-            id="pinColor"
-            type="color"
-            value={color}
-            onChange={(e) => setColor(e.target.value)}
-            title="Choose pin colour"
-          />
+          <input id="pinColor" type="color" value={color} onChange={(e) => setColor(e.target.value)} title="Choose pin colour" />
         </div>
       </div>
 
       <div className="memory-form__row">
-        <input
-          className="memory-form__input"
-          type="file"
-          accept="image/*"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          title="Image (optional)"
-        />
+        <input className="memory-form__input" type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} title="Image (optional)" />
       </div>
 
-      <button className="memory-form__btn" disabled={saving}>
-        {saving ? "Saving..." : "Add Marker"}
-      </button>
+      <button className="memory-form__btn" disabled={saving}>{saving ? "Saving..." : "Add Marker"}</button>
     </form>
   );
 }
 
+/* ---------------- Edit Memory Form (overlay) ---------------- */
+function EditMemoryForm({ memory, onClose }) {
+  const [title, setTitle] = useState(memory.title || "");
+  const [description, setDescription] = useState(memory.description || "");
+  const [lat, setLat] = useState(() => {
+    const pos = toLatLng(memory.coordinates ?? memory.location ?? memory.position);
+    return pos ? String(pos[0]) : "";
+  });
+  const [lng, setLng] = useState(() => {
+    const pos = toLatLng(memory.coordinates ?? memory.location ?? memory.position);
+    return pos ? String(pos[1]) : "";
+  });
+  const [category, setCategory] = useState(memory.category || "");
+  const [color, setColor] = useState(memory.color || "#3b82f6");
+  const [file, setFile] = useState(null);
+  const [removeImage, setRemoveImage] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-/* ----- inline styles for the popup card (compact & tidy) ----- */
-const formCardStyle = {
-  position: "absolute",
-  left: 16,
-  bottom: 70,     // sits above the FAB
-  zIndex: 1000,
-  width: 360,     // compact width (was wider before)
-  maxWidth: "92vw",
-  background: "#ffffff",
-  border: "1px solid #e5e7eb",
-  borderRadius: 14,
-  padding: 12,
-  boxShadow: "0 12px 28px rgba(0,0,0,0.18)",
-};
-const formHeaderStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  marginBottom: 8,
-};
-const closeBtnStyle = {
-  background: "transparent",
-  border: "none",
-  fontSize: 18,
-  cursor: "pointer",
-  lineHeight: 1,
-};
-const rowStyle = { display: "flex", gap: 8, marginBottom: 8 };
-const grid2Style = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 8,
-  marginBottom: 8,
-};
-const inputStyle = {
-  width: "100%",
-  padding: 10,
-  border: "1px solid #d1d5db",
-  borderRadius: 10,
-  outline: "none",
-  fontSize: 14,
-};
-const submitBtnStyle = {
-  background: "#111827",
-  color: "#fff",
-  border: "none",
-  padding: "10px 12px",
-  borderRadius: 10,
-  cursor: "pointer",
-  width: "100%",
-  fontSize: 14,
-  fontWeight: 600,
-};
+  const existingImages = getImages(memory);
+  const existingImageUrl = existingImages[0]?.src || memory.imageUrl || null;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) {
+        alert("Please enter valid numeric latitude and longitude.");
+        setSaving(false);
+        return;
+      }
+      await updateMemory(memory.id, {
+        title, description, lat, lng, file, removeImage, category, color, existingImageUrl
+      });
+      onClose?.();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update marker");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form className="memory-form" onSubmit={submit}>
+      <div className="memory-form__header">
+        <strong>Edit Memory</strong>
+        <button type="button" className="memory-form__close" onClick={onClose} aria-label="Close">✕</button>
+      </div>
+
+      <div className="memory-form__row">
+        <input className="memory-form__input" placeholder="Title *" value={title} onChange={(e) => setTitle(e.target.value)} required />
+      </div>
+
+      <div className="memory-form__row">
+        <textarea className="memory-form__input" placeholder="Description (optional)" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+      </div>
+
+      <div className="memory-form__grid-2">
+        <input className="memory-form__input" placeholder="Latitude *" value={lat} onChange={(e) => setLat(e.target.value)} required />
+        <input className="memory-form__input" placeholder="Longitude *" value={lng} onChange={(e) => setLng(e.target.value)} required />
+      </div>
+
+      <div className="memory-form__grid-2">
+        <input className="memory-form__input" placeholder="Category (anything)" value={category} onChange={(e) => setCategory(e.target.value)} />
+        <div className="memory-form__color memory-form__input">
+          <label htmlFor={`pinColor-${memory.id}`}>Marker colour</label>
+          <input id={`pinColor-${memory.id}`} type="color" value={color} onChange={(e) => setColor(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="memory-form__row" style={{ display: "grid", gap: 8 }}>
+        {existingImageUrl && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <img src={existingImageUrl} alt="current" style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover" }} />
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14 }}>
+              <input type="checkbox" checked={removeImage} onChange={(e) => setRemoveImage(e.target.checked)} />
+              Remove existing image
+            </label>
+          </div>
+        )}
+        <input className="memory-form__input" type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} title="Replace image (optional)" />
+      </div>
+
+      <button className="memory-form__btn" disabled={saving}>{saving ? "Saving..." : "Save Changes"}</button>
+    </form>
+  );
+}
 
 /* ---------------- Main App ---------------- */
 export default function App() {
   const [memories, setMemories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [editingMemory, setEditingMemory] = useState(null);
 
   const initialPosition = [48.8584, 2.2945]; // Paris
 
@@ -408,42 +422,43 @@ export default function App() {
 
           const { title, description } = getTextFields(memory);
           const images = getImages(memory);
-          const thumb = images[0]?.src;
 
           return (
-            <Marker
-              key={memory.id}
-              position={pos}
-              icon={iconForMemory(memory)}
-              riseOnHover
-            >
-              {thumb && (
-                <Tooltip direction="top" offset={[0, -20]} opacity={1} sticky>
-                  <div style={{ maxWidth: 200 }}>
-                    <strong>{title}</strong>
-                    <img src={thumb} alt={title} className="tooltip-thumbnail" loading="lazy" />
-                  </div>
-                </Tooltip>
-              )}
-
+            <Marker key={memory.id} position={pos} icon={iconForMemory(memory)} riseOnHover>
               <Popup>
                 <div style={{ maxWidth: 300 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                     <strong>{title}</strong>
-                    <button
-                      onClick={() => handleDelete(memory.id, title)}
-                      style={{
-                        background: "#ef4444",
-                        color: "#fff",
-                        border: "none",
-                        padding: "4px 8px",
-                        borderRadius: 6,
-                        cursor: "pointer",
-                      }}
-                      title="Delete marker"
-                    >
-                      Delete
-                    </button>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button
+                        onClick={() => setEditingMemory(memory)}
+                        style={{
+                          background: "#111827",
+                          color: "#fff",
+                          border: "none",
+                          padding: "4px 8px",
+                          borderRadius: 6,
+                          cursor: "pointer",
+                        }}
+                        title="Edit marker"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(memory.id, title)}
+                        style={{
+                          background: "#ef4444",
+                          color: "#fff",
+                          border: "none",
+                          padding: "4px 8px",
+                          borderRadius: 6,
+                          cursor: "pointer",
+                        }}
+                        title="Delete marker"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
 
                   {description && (
@@ -451,11 +466,14 @@ export default function App() {
                   )}
 
                   {images.length > 0 && (
-                    <div style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
-                      gap: 8, marginTop: 8
-                    }}>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+                        gap: 8,
+                        marginTop: 8,
+                      }}
+                    >
                       {images.map((img, i) => (
                         <figure key={i} style={{ margin: 0 }}>
                           <img
@@ -521,8 +539,11 @@ export default function App() {
         {showForm ? "Close" : "Add Memory"}
       </button>
 
-      {/* Toggleable form */}
+      {/* Toggleable forms */}
       {showForm && <AddMemoryForm onClose={() => setShowForm(false)} />}
+      {editingMemory && (
+        <EditMemoryForm memory={editingMemory} onClose={() => setEditingMemory(null)} />
+      )}
     </div>
   );
 }
