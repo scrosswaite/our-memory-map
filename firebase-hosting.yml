@@ -1,0 +1,25 @@
+name: Deploy to Firebase Hosting
+
+on:
+  push:
+    branches: [ master ]   # change if your default branch is not 'main'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - run: npm install -g firebase-tools
+      - name: Deploy
+        run: firebase deploy --only hosting --project memory-map-f53da
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
