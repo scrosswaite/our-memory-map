@@ -34,11 +34,11 @@ L.Marker.prototype.options.icon = DefaultIcon;
 
 /* ---------------- Category → default colour (fallback only) ---------------- */
 const CATEGORY_COLORS = {
-  holiday: "#f59e0b",   // amber
-  datenight: "#ec4899", // pink
-  friends: "#22c55e",   // green
-  work: "#3b82f6",      // blue
-  other: "#6b7280",     // gray
+  holiday: "#f59e0b",
+  datenight: "#ec4899",
+  friends: "#22c55e",
+  work: "#3b82f6",
+  other: "#6b7280",
   default: "#3b82f6",
 };
 
@@ -75,7 +75,6 @@ function normalizeColor(raw) {
   const s = raw.trim();
   if (/^#[0-9a-fA-F]{6}$/.test(s)) return s;
   if (/^#[0-9a-fA-F]{3}$/.test(s)) {
-    // expand #abc → #aabbcc
     const r = s[1], g = s[2], b = s[3];
     return `#${r}${r}${g}${g}${b}${b}`;
   }
@@ -94,10 +93,8 @@ function iconForMemory(memory) {
 }
 
 /* ---------------- Helpers ---------------- */
-// Normalise any coordinate shape into [lat, lng]
 function toLatLng(coord) {
   if (!coord) return null;
-
   if (typeof coord.latitude === "number" && typeof coord.longitude === "number") {
     return [coord.latitude, coord.longitude];
   }
@@ -111,7 +108,6 @@ function toLatLng(coord) {
   return Number.isFinite(lat) && Number.isFinite(lng) ? [lat, lng] : null;
 }
 
-// Title + description safe getters
 function getTextFields(memory) {
   const title = memory.title ?? memory.name ?? memory.Title ?? "Untitled location";
   const description =
@@ -124,7 +120,6 @@ function getTextFields(memory) {
   return { title, description };
 }
 
-// Normalise images to [{src, caption}]
 function getImages(memory) {
   const raw =
     memory.images ??
@@ -161,21 +156,19 @@ function getImages(memory) {
 /* ---------------- Firestore: add / update a memory ---------------- */
 async function addMemory({ title, description, lat, lng, file, category, color }) {
   let imageUrl = "";
-
   if (file) {
     const path = `memories/${Date.now()}-${file.name}`;
     const storageRef = ref(storage, path);
     await uploadBytes(storageRef, file);
     imageUrl = await getDownloadURL(storageRef);
   }
-
   await addDoc(collection(db, "memories"), {
     title,
     description: description ?? "",
     coordinates: new GeoPoint(Number(lat), Number(lng)),
     imageUrl: imageUrl || null,
-    category: (category || "").trim(),            // free text
-    color: normalizeColor(color) || null,         // explicit pin colour
+    category: (category || "").trim(),
+    color: normalizeColor(color) || null,
     createdAt: serverTimestamp(),
   });
 }
@@ -188,8 +181,6 @@ async function updateMemory(id, { title, description, lat, lng, file, removeImag
     category: (category || "").trim(),
     color: normalizeColor(color) || null,
   };
-
-  // handle image changes
   if (file) {
     const path = `memories/${Date.now()}-${file.name}`;
     const storageRef = ref(storage, path);
@@ -198,22 +189,19 @@ async function updateMemory(id, { title, description, lat, lng, file, removeImag
     payload.imageUrl = newUrl;
   } else if (removeImage) {
     payload.imageUrl = null;
-  } else if (existingImageUrl) {
-    // keep it as-is (no field included = unchanged)
   }
-
   await updateDoc(doc(db, "memories", id), payload);
 }
 
-/* ---------------- Add Memory Form (toggleable) ---------------- */
+/* ---------------- Forms ---------------- */
 function AddMemoryForm({ onClose }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
   const [file, setFile] = useState(null);
-  const [category, setCategory] = useState("");      // free text
-  const [color, setColor] = useState("#3b82f6");     // chosen pin colour
+  const [category, setCategory] = useState("");
+  const [color, setColor] = useState("#3b82f6");
   const [saving, setSaving] = useState(false);
 
   const submit = async (e) => {
@@ -226,8 +214,8 @@ function AddMemoryForm({ onClose }) {
         return;
       }
       await addMemory({ title, description, lat, lng, file, category, color });
-      setTitle(""); setDescription(""); setLat(""); setLng("");
-      setFile(null); setCategory(""); setColor("#3b82f6");
+      setTitle(""); setDescription(""); setLat(""); setLng(""); setFile(null);
+      setCategory(""); setColor("#3b82f6");
       onClose?.();
     } catch (err) {
       console.error(err);
@@ -274,7 +262,6 @@ function AddMemoryForm({ onClose }) {
   );
 }
 
-/* ---------------- Edit Memory Form (overlay) ---------------- */
 function EditMemoryForm({ memory, onClose }) {
   const [title, setTitle] = useState(memory.title || "");
   const [description, setDescription] = useState(memory.description || "");
@@ -362,12 +349,61 @@ function EditMemoryForm({ memory, onClose }) {
   );
 }
 
+/* ---------------- NEW: Welcome modal (first visit) ---------------- */
+function WelcomeModal({ onClose }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+      <div className="modal-card">
+        <button className="modal-close" onClick={onClose} aria-label="Close welcome">✕</button>
+
+        <h1 id="welcome-title">Welcome to Our Memory Map 💛</h1>
+        <p>
+          I made this for us — a little map of our favourite moments together. Tap a pin to see the story,
+          photos, and where we were. Add new memories with the button in the corner.
+        </p>
+
+        <ul className="modal-list">
+          <li>🗺️ Tap pins to open photos + details</li>
+          <li>➕ “Add Memory” to drop a new pin</li>
+          <li>🎨 Choose a colour and category you like</li>
+          <li>✏️ Edit or delete from the pin’s popup</li>
+        </ul>
+
+        <p style={{ marginTop: 8 }}>
+          Most important: I love you. Thanks for making these memories with me. 💐
+        </p>
+
+        <div className="modal-actions">
+          <button className="modal-btn primary" onClick={onClose}>Start exploring</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Main App ---------------- */
 export default function App() {
   const [memories, setMemories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingMemory, setEditingMemory] = useState(null);
+
+  // NEW: first-visit welcome
+  const [showWelcome, setShowWelcome] = useState(false);
+  useEffect(() => {
+    const seen = localStorage.getItem("mm_welcome_seen_v1");
+    if (!seen) setShowWelcome(true);
+  }, []);
+  const dismissWelcome = () => {
+    localStorage.setItem("mm_welcome_seen_v1", "1");
+    setShowWelcome(false);
+  };
 
   const initialPosition = [48.8584, 2.2945]; // Paris
 
@@ -408,7 +444,7 @@ export default function App() {
 
   return (
     <div className="page" style={{ position: "relative" }}>
-      <MapContainer center={firstValidPos} zoom={13} style={{ height: "90vh", width: "100%" }}>
+      <MapContainer className="map" center={firstValidPos} zoom={13}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -521,19 +557,7 @@ export default function App() {
       {/* Floating "Add Memory" button (bottom-left) */}
       <button
         onClick={() => setShowForm((s) => !s)}
-        style={{
-          position: "absolute",
-          left: 16,
-          bottom: 16,
-          zIndex: 1000,
-          background: "#111827",
-          color: "#fff",
-          border: "none",
-          padding: "10px 14px",
-          borderRadius: 999,
-          cursor: "pointer",
-          boxShadow: "0 6px 20px rgba(0,0,0,0.25)",
-        }}
+        className="fab"
         title="Add Memory"
       >
         {showForm ? "Close" : "Add Memory"}
@@ -544,6 +568,9 @@ export default function App() {
       {editingMemory && (
         <EditMemoryForm memory={editingMemory} onClose={() => setEditingMemory(null)} />
       )}
+
+      {/* NEW: First-visit welcome modal */}
+      {showWelcome && <WelcomeModal onClose={dismissWelcome} />}
     </div>
   );
 }
