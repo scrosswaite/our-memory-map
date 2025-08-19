@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Tooltip } from "react-leaflet";
 import { db } from "./firebase";
 import { collection, getDocs } from "firebase/firestore";
 import L from "leaflet";
@@ -48,10 +48,63 @@ function toLatLng(coord) {
     coord.lng ??
     coord.lon ??
     coord.longitude;
+
   const lat = typeof rawLat === "number" ? rawLat : parseFloat(rawLat);
   const lng = typeof rawLng === "number" ? rawLng : parseFloat(rawLng);
 
   return Number.isFinite(lat) && Number.isFinite(lng) ? [lat, lng] : null;
+}
+
+// ---------- Helper: get title + description safely ----------
+function getTextFields(memory) {
+  const title =
+    memory.title ?? memory.name ?? memory.Title ?? "Untitled location";
+
+  const description =
+    memory.description ??
+    memory.desc ??
+    memory.Details ??
+    memory.text ??
+    memory.Description ??
+    "";
+
+  return { title, description };
+}
+
+// ---------- Helper: normalise images to [{src, caption}] ----------
+function getImages(memory) {
+  // Accepts: image/imageUrl/imageURL, images[], photos[], or array of objects {url/src/downloadURL, caption}
+  const raw =
+    memory.images ??
+    memory.photos ??
+    memory.image ??
+    memory.photo ??
+    memory.imageUrl ??
+    memory.imageURL ??
+    memory.Image ??
+    [];
+
+  let arr = [];
+  if (Array.isArray(raw)) {
+    arr = raw
+      .map((item) => {
+        if (typeof item === "string") return { src: item, caption: "" };
+        if (item && typeof item === "object") {
+          const src = item.url ?? item.src ?? item.downloadURL ?? "";
+          const caption = item.caption ?? item.alt ?? "";
+          return src ? { src, caption } : null;
+        }
+        return null;
+      })
+      .filter(Boolean);
+  } else if (typeof raw === "string") {
+    arr = [{ src: raw, caption: "" }];
+  } else if (raw && typeof raw === "object") {
+    const src = raw.url ?? raw.src ?? raw.downloadURL ?? "";
+    const caption = raw.caption ?? raw.alt ?? "";
+    if (src) arr = [{ src, caption }];
+  }
+  return arr;
 }
 
 export default function App() {
@@ -122,10 +175,16 @@ export default function App() {
       .find(Boolean) || initialPosition;
 
   // Log 8: Shows that the component is now ready to render the map
-  console.log(`Log 8: Now rendering the map. Number of memories: ${memories.length}`);
+  console.log(
+    `Log 8: Now rendering the map. Number of memories: ${memories.length}`
+  );
 
   return (
-    <MapContainer center={firstValidPos} zoom={13} style={{ height: "100vh", width: "100%" }}>
+    <MapContainer
+      center={firstValidPos}
+      zoom={13}
+      style={{ height: "100vh", width: "100%" }}
+    >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -153,9 +212,53 @@ export default function App() {
           return null;
         }
 
+        const { title, description } = getTextFields(memory);
+        const images = getImages(memory);
+        const thumb = images[0]?.src;
+
         return (
-          <Marker key={memory.id} position={pos}>
-            <Popup>{memory.title ?? "Untitled memory"}</Popup>
+          <Marker key={memory.id} position={pos} riseOnHover>
+            {/* Hover thumbnail + title */}
+            {thumb && (
+              <Tooltip direction="top" offset={[0, -20]} opacity={1} sticky>
+                <div style={{ maxWidth: 200 }}>
+                  <strong>{title}</strong>
+                  <img
+                    src={thumb}
+                    alt={title}
+                    className="tooltip-thumbnail"
+                    loading="lazy"
+                  />
+                </div>
+              </Tooltip>
+            )}
+
+            {/* Click: popup with description + gallery */}
+            <Popup>
+              <div style={{ maxWidth: 300 }}>
+                <strong>{title}</strong>
+                {description && (
+                  <p style={{ margin: "6px 0 0", whiteSpace: "pre-line" }}>
+                    {description}
+                  </p>
+                )}
+
+                {images.length > 0 && (
+                  <div className="popup-gallery">
+                    {images.map((img, i) => (
+                      <figure key={i} className="popup-figure">
+                        <img
+                          src={img.src}
+                          alt={img.caption || title}
+                          loading="lazy"
+                        />
+                        {img.caption && <figcaption>{img.caption}</figcaption>}
+                      </figure>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Popup>
           </Marker>
         );
       })}
