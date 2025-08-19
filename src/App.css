@@ -127,3 +127,137 @@
   line-height: 1.2;
 }
 
+/* --- Global consistency --- */
+* { box-sizing: border-box; }
+
+:root {
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
+  --card-w: 420px;      /* target width for the form */
+  --radius: 14px;
+  --border: #e5e7eb;
+  --shadow: 0 12px 28px rgba(0,0,0,.18);
+  --text: #0f172a;
+}
+
+html, body, #root {
+  font-family: var(--font-ui);
+  color: var(--text);
+  line-height: 1.4;
+}
+
+input, textarea, select, button {
+  font: inherit;        /* unify fonts across controls */
+  line-height: 1.4;
+  color: inherit;
+}
+
+/* --- Add Memory popup card --- */
+.memory-form {
+  position: absolute;
+  left: 16px;
+  bottom: 76px;               /* sits above your FAB */
+  z-index: 1000;
+
+  width: min(var(--card-w), 92vw);
+  max-height: 76vh;           /* prevent overflow */
+  overflow: auto;
+
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 12px;
+
+  display: grid;
+  row-gap: 10px;
+}
+
+.memory-form__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.memory-form__close {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.memory-form__row {
+  display: grid;
+  row-gap: 8px;
+}
+
+.memory-form__grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.memory-form__input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.memory-form__input::placeholder {
+  color: #9ca3af;
+}
+
+textarea.memory-form__input { min-height: 88px; }
+
+/* colour picker field */
+.memory-form__color {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;          /* looks like other inputs */
+}
+
+.memory-form__color label {
+  font-size: 12px;
+  color: #374151;
+  white-space: nowrap;
+}
+
+.memory-form__color input[type="color"] {
+  width: 40px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* primary button */
+.memory-form__btn {
+  background: #111827;
+  color: #fff;
+  border: none;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  width: 100%;
+  font-size: 14px;
+  font-weight: 600;
+}
+.memory-form__btn:disabled { opacity: .7; cursor: not-allowed; }
+
+/* Tooltip thumbnail / popup gallery (from earlier) */
+.tooltip-thumbnail {
+  display: block;
+  max-width: 180px;
+  height: auto;
+  border-radius: 8px;
+  margin-top: 6px;
+}
+.popup-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; }
+.popup-figure { margin: 0; }
+.popup-gallery img { width: 100%; height: auto; border-radius: 8px; object-fit: cover; }
+.popup-gallery figcaption { font-size: 12px; color: #555; margin-top: 4px; line-height: 1.2; }
+

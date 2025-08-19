@@ -31,7 +31,7 @@ const DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-/* ---------------- Category → colour mapping ---------------- */
+/* ---------------- Category → default colour (fallback only) ---------------- */
 const CATEGORY_COLORS = {
   holiday: "#f59e0b",   // amber
   datenight: "#ec4899", // pink
@@ -41,7 +41,7 @@ const CATEGORY_COLORS = {
   default: "#3b82f6",
 };
 
-/* ---------------- Build a coloured SVG pin as a Leaflet icon ---------------- */
+/* ---------------- Coloured SVG pin icon ---------------- */
 function makePinIcon(color, stroke = "#111827") {
   const svg = `
 <svg xmlns="http://www.w3.org/2000/svg" width="25" height="41" viewBox="0 0 25 41">
@@ -59,13 +59,37 @@ function makePinIcon(color, stroke = "#111827") {
   });
 }
 
-// Cache icons so we don't rebuild each render
-const iconCache = new Map();
-function iconForCategory(catRaw) {
-  const key = (catRaw || "default").toString().trim().toLowerCase();
-  const color = CATEGORY_COLORS[key] || CATEGORY_COLORS.default;
-  if (!iconCache.has(color)) iconCache.set(color, makePinIcon(color));
-  return iconCache.get(color);
+/* cache icons by color */
+const colorIconCache = new Map();
+function iconFromColor(color) {
+  if (!colorIconCache.has(color)) {
+    colorIconCache.set(color, makePinIcon(color));
+  }
+  return colorIconCache.get(color);
+}
+
+/* normalize color string (accepts #rgb or #rrggbb) */
+function normalizeColor(raw) {
+  if (typeof raw !== "string") return null;
+  const s = raw.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(s)) return s;
+  if (/^#[0-9a-fA-F]{3}$/.test(s)) {
+    // expand #abc → #aabbcc
+    const r = s[1], g = s[2], b = s[3];
+    return `#${r}${r}${g}${g}${b}${b}`;
+  }
+  return null;
+}
+
+/* choose icon for a memory: prefer explicit color, else fallback by category */
+function iconForMemory(memory) {
+  const explicit = normalizeColor(memory.color || memory.pinColor || memory.colour);
+  if (explicit) return iconFromColor(explicit);
+
+  const fallback =
+    CATEGORY_COLORS[(memory.category || "").toString().trim().toLowerCase()] ||
+    CATEGORY_COLORS.default;
+  return iconFromColor(fallback);
 }
 
 /* ---------------- Helpers ---------------- */
@@ -73,23 +97,16 @@ function iconForCategory(catRaw) {
 function toLatLng(coord) {
   if (!coord) return null;
 
-  // Firestore GeoPoint (preferred)
   if (typeof coord.latitude === "number" && typeof coord.longitude === "number") {
     return [coord.latitude, coord.longitude];
   }
-
-  // Common shapes with numbers
   if (typeof coord.lat === "number" && typeof (coord.lng ?? coord.lon) === "number") {
     return [coord.lat, coord.lng ?? coord.lon];
   }
-
-  // Capitalised / string variants
   const rawLat = coord.Latitude ?? coord.LAT ?? coord.lat ?? coord.latitude;
   const rawLng = coord.Longitude ?? coord.LONG ?? coord.lng ?? coord.lon ?? coord.longitude;
-
   const lat = typeof rawLat === "number" ? rawLat : parseFloat(rawLat);
   const lng = typeof rawLng === "number" ? rawLng : parseFloat(rawLng);
-
   return Number.isFinite(lat) && Number.isFinite(lng) ? [lat, lng] : null;
 }
 
@@ -117,7 +134,6 @@ function getImages(memory) {
     memory.imageURL ??
     memory.Image ??
     [];
-
   let arr = [];
   if (Array.isArray(raw)) {
     arr = raw
@@ -142,10 +158,9 @@ function getImages(memory) {
 }
 
 /* ---------------- Firestore: add a memory ---------------- */
-async function addMemory({ title, description, lat, lng, file, category }) {
+async function addMemory({ title, description, lat, lng, file, category, color }) {
   let imageUrl = "";
 
-  // Upload image (if provided) and fetch public URL
   if (file) {
     const path = `memories/${Date.now()}-${file.name}`;
     const storageRef = ref(storage, path);
@@ -153,13 +168,13 @@ async function addMemory({ title, description, lat, lng, file, category }) {
     imageUrl = await getDownloadURL(storageRef);
   }
 
-  // Write Firestore doc (use GeoPoint for coordinates)
   await addDoc(collection(db, "memories"), {
     title,
     description: description ?? "",
     coordinates: new GeoPoint(Number(lat), Number(lng)),
-    imageUrl: imageUrl || null, // or "images: [{ url: imageUrl }]" if you later want arrays
-    category: (category || "other").toLowerCase().trim(),
+    imageUrl: imageUrl || null,
+    category: (category || "").trim(),            // free text
+    color: normalizeColor(color) || null,         // explicit pin colour
     createdAt: serverTimestamp(),
   });
 }
@@ -171,7 +186,8 @@ function AddMemoryForm({ onClose }) {
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
   const [file, setFile] = useState(null);
-  const [category, setCategory] = useState("holiday");
+  const [category, setCategory] = useState("");      // free text
+  const [color, setColor] = useState("#3b82f6");     // chosen pin colour
   const [saving, setSaving] = useState(false);
 
   const submit = async (e) => {
@@ -183,11 +199,10 @@ function AddMemoryForm({ onClose }) {
         setSaving(false);
         return;
       }
-      await addMemory({ title, description, lat, lng, file, category });
-      // reset form
-      setTitle(""); setDescription(""); setLat(""); setLng(""); setFile(null);
-      setCategory("holiday");
-      onClose?.(); // close after add
+      await addMemory({ title, description, lat, lng, file, category, color });
+      setTitle(""); setDescription(""); setLat(""); setLng("");
+      setFile(null); setCategory(""); setColor("#3b82f6");
+      onClose?.();
     } catch (err) {
       console.error(err);
       alert("Failed to add marker");
@@ -197,127 +212,141 @@ function AddMemoryForm({ onClose }) {
   };
 
   return (
-    <form
-      className="add-form"
-      onSubmit={submit}
-      style={{
-        position: "absolute",
-        left: 16,
-        bottom: 70,        // sits above the FAB
-        zIndex: 1000,
-        width: 320,
-        maxWidth: "90vw",
-        background: "#ffffff",
-        border: "1px solid #e5e7eb",
-        borderRadius: 10,
-        padding: 10,
-        boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+    <form className="memory-form" onSubmit={submit}>
+      <div className="memory-form__header">
         <strong>Add Memory</strong>
-        <button
-          type="button"
-          onClick={onClose}
-          style={{ background: "transparent", border: "none", fontSize: 18, cursor: "pointer" }}
-          aria-label="Close"
-          title="Close"
-        >
-          ✕
-        </button>
+        <button type="button" className="memory-form__close" onClick={onClose} aria-label="Close">✕</button>
       </div>
 
-      <div className="row" style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+      <div className="memory-form__row">
         <input
-          className="text"
+          className="memory-form__input"
           placeholder="Title *"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           required
-          style={inputStyle}
         />
       </div>
 
-      <div className="row" style={{ marginBottom: 8 }}>
+      <div className="memory-form__row">
         <textarea
-          className="text"
+          className="memory-form__input"
           placeholder="Description (optional)"
+          rows={3}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          rows={3}
-          style={{ ...inputStyle, resize: "vertical" }}
         />
       </div>
 
-      <div className="row two-col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+      <div className="memory-form__grid-2">
         <input
-          className="text"
+          className="memory-form__input"
           placeholder="Latitude *"
           value={lat}
           onChange={(e) => setLat(e.target.value)}
           required
-          style={inputStyle}
         />
         <input
-          className="text"
+          className="memory-form__input"
           placeholder="Longitude *"
           value={lng}
           onChange={(e) => setLng(e.target.value)}
           required
-          style={inputStyle}
         />
       </div>
 
-      <div className="row two-col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-        <select
-          className="text"
+      <div className="memory-form__grid-2">
+        {/* Free-text category */}
+        <input
+          className="memory-form__input"
+          placeholder="Category (anything)"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-          title="Category"
-          style={inputStyle}
-        >
-          <option value="holiday">Holiday</option>
-          <option value="datenight">Date night</option>
-          <option value="friends">Out with friends</option>
-          <option value="work">Work</option>
-          <option value="other">Other</option>
-        </select>
+        />
 
+        {/* Pick marker colour */}
+        <div className="memory-form__color memory-form__input">
+          <label htmlFor="pinColor">Marker colour</label>
+          <input
+            id="pinColor"
+            type="color"
+            value={color}
+            onChange={(e) => setColor(e.target.value)}
+            title="Choose pin colour"
+          />
+        </div>
+      </div>
+
+      <div className="memory-form__row">
         <input
-          className="file"
+          className="memory-form__input"
           type="file"
           accept="image/*"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           title="Image (optional)"
-          style={inputStyle}
         />
       </div>
 
-      <button
-        className="btn"
-        disabled={saving}
-        style={{
-          background: "#111827",
-          color: "#fff",
-          border: "none",
-          padding: "8px 12px",
-          borderRadius: 8,
-          cursor: "pointer",
-          width: "100%",
-        }}
-      >
+      <button className="memory-form__btn" disabled={saving}>
         {saving ? "Saving..." : "Add Marker"}
       </button>
     </form>
   );
 }
 
+
+/* ----- inline styles for the popup card (compact & tidy) ----- */
+const formCardStyle = {
+  position: "absolute",
+  left: 16,
+  bottom: 70,     // sits above the FAB
+  zIndex: 1000,
+  width: 360,     // compact width (was wider before)
+  maxWidth: "92vw",
+  background: "#ffffff",
+  border: "1px solid #e5e7eb",
+  borderRadius: 14,
+  padding: 12,
+  boxShadow: "0 12px 28px rgba(0,0,0,0.18)",
+};
+const formHeaderStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: 8,
+};
+const closeBtnStyle = {
+  background: "transparent",
+  border: "none",
+  fontSize: 18,
+  cursor: "pointer",
+  lineHeight: 1,
+};
+const rowStyle = { display: "flex", gap: 8, marginBottom: 8 };
+const grid2Style = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 8,
+  marginBottom: 8,
+};
 const inputStyle = {
   width: "100%",
-  padding: 8,
+  padding: 10,
   border: "1px solid #d1d5db",
-  borderRadius: 8,
+  borderRadius: 10,
   outline: "none",
+  fontSize: 14,
+};
+const submitBtnStyle = {
+  background: "#111827",
+  color: "#fff",
+  border: "none",
+  padding: "10px 12px",
+  borderRadius: 10,
+  cursor: "pointer",
+  width: "100%",
+  fontSize: 14,
+  fontWeight: 600,
 };
 
 /* ---------------- Main App ---------------- */
@@ -326,11 +355,9 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
 
-  // Default centre if no points yet (Paris)
-  const initialPosition = [48.8584, 2.2945];
+  const initialPosition = [48.8584, 2.2945]; // Paris
 
   useEffect(() => {
-    // Real-time subscription so new markers appear immediately
     const col = collection(db, "memories");
     const unsub = onSnapshot(
       col,
@@ -349,13 +376,11 @@ export default function App() {
 
   if (loading) return <div>Loading memories...</div>;
 
-  // Centre map on the first valid memory position if available
   const firstValidPos =
     memories
       .map((m) => toLatLng(m.coordinates ?? m.Coordinates ?? m.location ?? m.position ?? null))
       .find(Boolean) || initialPosition;
 
-  // Delete a memory document (note: this doesn't delete Storage image)
   const handleDelete = async (id, title = "") => {
     const ok = window.confirm(`Delete "${title || "this memory"}"?`);
     if (!ok) return;
@@ -369,7 +394,6 @@ export default function App() {
 
   return (
     <div className="page" style={{ position: "relative" }}>
-      {/* Map */}
       <MapContainer center={firstValidPos} zoom={13} style={{ height: "90vh", width: "100%" }}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -385,17 +409,14 @@ export default function App() {
           const { title, description } = getTextFields(memory);
           const images = getImages(memory);
           const thumb = images[0]?.src;
-          const category =
-            (memory.category ?? memory.Category ?? memory.type ?? "other").toString();
 
           return (
             <Marker
               key={memory.id}
               position={pos}
-              icon={iconForCategory(category)}
+              icon={iconForMemory(memory)}
               riseOnHover
             >
-              {/* Hover: thumbnail + title */}
               {thumb && (
                 <Tooltip direction="top" offset={[0, -20]} opacity={1} sticky>
                   <div style={{ maxWidth: 200 }}>
@@ -405,7 +426,6 @@ export default function App() {
                 </Tooltip>
               )}
 
-              {/* Click: full popup with description + gallery + delete */}
               <Popup>
                 <div style={{ maxWidth: 300 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
@@ -431,9 +451,13 @@ export default function App() {
                   )}
 
                   {images.length > 0 && (
-                    <div className="popup-gallery" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8, marginTop: 8 }}>
+                    <div style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+                      gap: 8, marginTop: 8
+                    }}>
                       {images.map((img, i) => (
-                        <figure key={i} className="popup-figure" style={{ margin: 0 }}>
+                        <figure key={i} style={{ margin: 0 }}>
                           <img
                             src={img.src}
                             alt={img.caption || title}
@@ -450,9 +474,25 @@ export default function App() {
                     </div>
                   )}
 
-                  <p style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
-                    Category: <b>{category}</b>
-                  </p>
+                  <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
+                    {memory.category && <>Category: <b>{memory.category}</b></>}
+                    {memory.color && (
+                      <span style={{ marginLeft: 8 }}>
+                        Colour:
+                        <span
+                          style={{
+                            display: "inline-block",
+                            width: 12,
+                            height: 12,
+                            background: normalizeColor(memory.color) || "#000",
+                            borderRadius: 3,
+                            marginLeft: 6,
+                            verticalAlign: "middle",
+                          }}
+                        />
+                      </span>
+                    )}
+                  </div>
                 </div>
               </Popup>
             </Marker>
