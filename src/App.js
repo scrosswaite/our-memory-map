@@ -364,8 +364,10 @@ function WelcomeModal({ onClose }) {
 
         <h1 id="welcome-title">Welcome to Our Memory Map 💛</h1>
         <p>
-          I made this for us — a little map of our favourite moments together. Tap a pin to see the story,
-          photos, and where we were. Add new memories with the button in the corner.
+          Dear Eleanor, I made this for you. It's a map of our memories. I thought I'd combine my love of maps with you. 
+          Tap a pin to see the memory. Add new memories with the button in the corner.
+
+          I know this will never makeup for what I've done, but I hope it helps highlight how much this relationship means to me as this took a lot of time XD.
         </p>
 
         <ul className="modal-list">
