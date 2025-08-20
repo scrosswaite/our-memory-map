@@ -157,7 +157,7 @@ function getImages(memory) {
 }
 
 /* ---------------- Firestore: add / update a memory ---------------- */
-async function addMemory({ title, description, lat, lng, file, category, color }) {
+async function addMemory({ title, description, lat, lng, file, category, color, date }) {
   let imageUrl = "";
   if (file) {
     const path = `memories/${Date.now()}-${file.name}`;
@@ -172,17 +172,19 @@ async function addMemory({ title, description, lat, lng, file, category, color }
     imageUrl: imageUrl || null,
     category: (category || "").trim(),
     color: normalizeColor(color) || null,
+    date: date || null, // Add this line
     createdAt: serverTimestamp(),
   });
 }
 
-async function updateMemory(id, { title, description, lat, lng, file, removeImage, category, color }) {
+async function updateMemory(id, { title, description, lat, lng, file, removeImage, category, color, date }) {
   const payload = {
     title,
     description: description ?? "",
     coordinates: new GeoPoint(Number(lat), Number(lng)),
     category: (category || "").trim(),
     color: normalizeColor(color) || null,
+    date: date || null,
   };
   if (file) {
     const path = `memories/${Date.now()}-${file.name}`;
@@ -205,6 +207,7 @@ function AddMemoryForm({ onClose }) {
   const [file, setFile] = useState(null);
   const [category, setCategory] = useState("");
   const [color, setColor] = useState("#3b82f6");
+  const [date, setDate] = useState("");
   const [saving, setSaving] = useState(false);
 
   const submit = async (e) => {
@@ -218,7 +221,7 @@ function AddMemoryForm({ onClose }) {
       }
       await addMemory({ title, description, lat, lng, file, category, color });
       setTitle(""); setDescription(""); setLat(""); setLng(""); setFile(null);
-      setCategory(""); setColor("#3b82f6");
+      setCategory(""); setColor("#3b82f6"); setDate("");
       onClose?.();
     } catch (err) {
       console.error(err);
@@ -268,6 +271,7 @@ function AddMemoryForm({ onClose }) {
 function EditMemoryForm({ memory, onClose }) {
   const [title, setTitle] = useState(memory.title || "");
   const [description, setDescription] = useState(memory.description || "");
+  const [date, setDate] = useState(memory.date || "");
   const [lat, setLat] = useState(() => {
     const pos = toLatLng(memory.coordinates ?? memory.location ?? memory.position);
     return pos ? String(pos[0]) : "";
@@ -294,7 +298,7 @@ function EditMemoryForm({ memory, onClose }) {
         return;
       }
       await updateMemory(memory.id, {
-        title, description, lat, lng, file, removeImage, category, color
+        title, description, lat, lng, file, removeImage, category, color, date
       });
       onClose?.();
     } catch (err) {
@@ -318,6 +322,10 @@ function EditMemoryForm({ memory, onClose }) {
 
       <div className="memory-form__row">
         <textarea className="memory-form__input" placeholder="Description (optional)" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+      </div>
+
+      <div className="memory-form__row">
+        <input className="memory-form__input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       </div>
 
       <div className="memory-form__grid-2">
@@ -690,6 +698,12 @@ export default function App() {
                       </span>
                     )}
                   </div>
+
+                  {memory.date && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
+                          Date: <b>{new Date(memory.date).toLocaleDateString()}</b>
+                      </div>
+                  )}
 
                   {/* NEW: comments */}
                   <CommentsSection memoryId={memory.id} user={user} ownerUid={OWNER_UID} />
