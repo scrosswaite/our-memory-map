@@ -199,6 +199,8 @@ async function updateMemory(id, { title, description, lat, lng, file, removeImag
 }
 
 /* ---------------- Forms ---------------- */
+// src/App.js
+
 function AddMemoryForm({ onClose }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -219,7 +221,8 @@ function AddMemoryForm({ onClose }) {
         setSaving(false);
         return;
       }
-      await addMemory({ title, description, lat, lng, file, category, color });
+      // 👇 CORRECTION IS HERE: Added 'date' to the object being passed
+      await addMemory({ title, description, lat, lng, file, category, color, date });
       setTitle(""); setDescription(""); setLat(""); setLng(""); setFile(null);
       setCategory(""); setColor("#3b82f6"); setDate("");
       onClose?.();
@@ -257,6 +260,11 @@ function AddMemoryForm({ onClose }) {
           <label htmlFor="pinColor">Marker colour</label>
           <input id="pinColor" type="color" value={color} onChange={(e) => setColor(e.target.value)} title="Choose pin colour" />
         </div>
+      </div>
+      
+      {/* 👇 CORRECTION IS HERE: Added the date input field */}
+      <div className="memory-form__row">
+        <input className="memory-form__input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       </div>
 
       <div className="memory-form__row">
