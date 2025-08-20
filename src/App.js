@@ -3,7 +3,8 @@ import React, { useEffect, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-
+import { auth, googleProvider } from "./firebase";
+import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
 import { db, storage } from "./firebase";
 import {
   collection,
@@ -351,7 +352,7 @@ function EditMemoryForm({ memory, onClose }) {
 }
 
 /* ---------------- Comments (subcollection) ---------------- */
-function CommentsSection({ memoryId }) {
+function CommentsSection({ memoryId, user, ownerUid }) {
   const [comments, setComments] = useState([]);
   const [author, setAuthor] = useState("");
   const [text, setText] = useState("");
@@ -361,12 +362,7 @@ function CommentsSection({ memoryId }) {
     const colRef = collection(db, "memories", memoryId, "comments");
     const q = query(colRef, orderBy("createdAt", "asc"));
     const unsub = onSnapshot(q, (snap) => {
-      setComments(
-        snap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }))
-      );
+      setComments(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
     return () => unsub();
   }, [memoryId]);
@@ -379,6 +375,7 @@ function CommentsSection({ memoryId }) {
       await addDoc(collection(db, "memories", memoryId, "comments"), {
         author: author.trim().slice(0, 60) || "Anonymous",
         text: text.trim().slice(0, 1000),
+        authorUid: user?.uid || null,     // ← tie comment to signed-in user (if any)
         createdAt: serverTimestamp(),
       });
       setText("");
@@ -387,6 +384,20 @@ function CommentsSection({ memoryId }) {
       alert("Failed to post comment");
     } finally {
       setPosting(false);
+    }
+  };
+
+  const canDelete = (c) =>
+    user && (user.uid === ownerUid || (c.authorUid && c.authorUid === user.uid));
+
+  const deleteComment = async (id) => {
+    if (!user) return alert("Sign in to delete comments.");
+    if (!window.confirm("Delete this comment?")) return;
+    try {
+      await deleteDoc(doc(db, "memories", memoryId, "comments", id));
+    } catch (err) {
+      console.error(err);
+      alert("Delete failed (check rules or sign-in).");
     }
   };
 
@@ -405,12 +416,29 @@ function CommentsSection({ memoryId }) {
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
                 <strong>{c.author || "Anonymous"}</strong>
                 <span style={{ color: "#6b7280" }}>
-                  {c.createdAt?.toDate
-                    ? c.createdAt.toDate().toLocaleString()
-                    : "Just now"}
+                  {c.createdAt?.toDate ? c.createdAt.toDate().toLocaleString() : "Just now"}
                 </span>
               </div>
               <div style={{ whiteSpace: "pre-wrap", fontSize: 13 }}>{c.text}</div>
+
+              {canDelete(c) && (
+                <div style={{ marginTop: 6, textAlign: "right" }}>
+                  <button
+                    onClick={() => deleteComment(c.id)}
+                    style={{
+                      background: "#ef4444",
+                      color: "#fff",
+                      border: "none",
+                      padding: "4px 8px",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      fontSize: 12,
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -494,6 +522,17 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingMemory, setEditingMemory] = useState(null);
+  const [user, setUser] = useState(null);
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, setUser);
+    return () => unsub();
+  }, []);
+
+  const signIn = async () => { await signInWithPopup(auth, googleProvider); };
+  const signOutNow = async () => { await signOut(auth); };
+
+  // Replace this with your real UID when you know it:
+  const OWNER_UID = "GDvRvv0TkxR2S5uWBdebALuNfbw2";
 
   // Welcome (one-time)
   const WELCOME_KEY = "mm_welcome_seen_v2";
@@ -653,13 +692,36 @@ export default function App() {
                   </div>
 
                   {/* NEW: comments */}
-                  <CommentsSection memoryId={memory.id} />
+                  <CommentsSection memoryId={memory.id} user={user} ownerUid={OWNER_UID} />
                 </div>
               </Popup>
             </Marker>
           );
         })}
       </MapContainer>
+
+    {/* Admin sign-in/out button (top-right) */}
+    <button
+      onClick={user ? signOutNow : signIn}
+      title={user ? `Signed in as ${user.email || user.uid}` : "Admin sign in"}
+      style={{
+        position: "absolute",
+        right: 16,
+        top: 16,
+        zIndex: 1100,
+        width: 38,
+        height: 38,
+        borderRadius: 999,
+        border: "none",
+        cursor: "pointer",
+        background: "#111827",
+        color: "#fff",
+        fontWeight: 700,
+        boxShadow: "0 6px 20px rgba(0,0,0,0.25)",
+      }}
+    >
+      {user ? "⎋" : "⚙︎"}
+    </button>
 
       {/* Floating "Add Memory" button (bottom-left) */}
       <button onClick={() => setShowForm((s) => !s)} className="fab" title="Add Memory">
