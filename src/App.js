@@ -14,6 +14,8 @@ import {
   deleteDoc,
   doc,
   updateDoc,
+  query,
+  orderBy,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -173,7 +175,7 @@ async function addMemory({ title, description, lat, lng, file, category, color }
   });
 }
 
-async function updateMemory(id, { title, description, lat, lng, file, removeImage, category, color, existingImageUrl }) {
+async function updateMemory(id, { title, description, lat, lng, file, removeImage, category, color }) {
   const payload = {
     title,
     description: description ?? "",
@@ -279,8 +281,7 @@ function EditMemoryForm({ memory, onClose }) {
   const [removeImage, setRemoveImage] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const existingImages = getImages(memory);
-  const existingImageUrl = existingImages[0]?.src || memory.imageUrl || null;
+  const existingImageUrl = memory.imageUrl || null;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -292,7 +293,7 @@ function EditMemoryForm({ memory, onClose }) {
         return;
       }
       await updateMemory(memory.id, {
-        title, description, lat, lng, file, removeImage, category, color, existingImageUrl
+        title, description, lat, lng, file, removeImage, category, color
       });
       onClose?.();
     } catch (err) {
@@ -349,7 +350,107 @@ function EditMemoryForm({ memory, onClose }) {
   );
 }
 
-/* ---------------- NEW: Welcome modal (first visit) ---------------- */
+/* ---------------- Comments (subcollection) ---------------- */
+function CommentsSection({ memoryId }) {
+  const [comments, setComments] = useState([]);
+  const [author, setAuthor] = useState("");
+  const [text, setText] = useState("");
+  const [posting, setPosting] = useState(false);
+
+  useEffect(() => {
+    const colRef = collection(db, "memories", memoryId, "comments");
+    const q = query(colRef, orderBy("createdAt", "asc"));
+    const unsub = onSnapshot(q, (snap) => {
+      setComments(
+        snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }))
+      );
+    });
+    return () => unsub();
+  }, [memoryId]);
+
+  const addComment = async (e) => {
+    e.preventDefault();
+    if (!text.trim()) return;
+    setPosting(true);
+    try {
+      await addDoc(collection(db, "memories", memoryId, "comments"), {
+        author: author.trim().slice(0, 60) || "Anonymous",
+        text: text.trim().slice(0, 1000),
+        createdAt: serverTimestamp(),
+      });
+      setText("");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to post comment");
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <h4 style={{ margin: "0 0 6px", fontSize: 14 }}>Comments</h4>
+
+      {comments.length === 0 ? (
+        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>
+          Be the first to leave a comment ✨
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 6, maxHeight: 180, overflow: "auto" }}>
+          {comments.map((c) => (
+            <div key={c.id} style={{ background: "#f9fafb", padding: 8, borderRadius: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                <strong>{c.author || "Anonymous"}</strong>
+                <span style={{ color: "#6b7280" }}>
+                  {c.createdAt?.toDate
+                    ? c.createdAt.toDate().toLocaleString()
+                    : "Just now"}
+                </span>
+              </div>
+              <div style={{ whiteSpace: "pre-wrap", fontSize: 13 }}>{c.text}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <form onSubmit={addComment} style={{ display: "grid", gap: 6, marginTop: 8 }}>
+        <input
+          value={author}
+          onChange={(e) => setAuthor(e.target.value)}
+          placeholder="Your name (optional)"
+          style={{ fontSize: 13, padding: 8, borderRadius: 8, border: "1px solid #e5e7eb" }}
+        />
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Write a comment…"
+          rows={2}
+          required
+          style={{ fontSize: 13, padding: 8, borderRadius: 8, border: "1px solid #e5e7eb" }}
+        />
+        <button
+          disabled={posting || !text.trim()}
+          style={{
+            justifySelf: "end",
+            background: "#111827",
+            color: "#fff",
+            border: "none",
+            padding: "6px 10px",
+            borderRadius: 8,
+            cursor: posting ? "default" : "pointer",
+          }}
+        >
+          {posting ? "Posting…" : "Post comment"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/* ---------------- Welcome modal (first visit) ---------------- */
 function WelcomeModal({ onClose }) {
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -364,10 +465,8 @@ function WelcomeModal({ onClose }) {
 
         <h1 id="welcome-title">Welcome to Our Memory Map 💛</h1>
         <p>
-          Dear Eleanor, I made this for you. It's a map of our memories. I thought I'd combine my love of maps with you. 
-          Tap a pin to see the memory. Add new memories with the button in the corner.
-
-          I know this will never makeup for what I've done, but I hope it helps highlight how much this relationship means to me as this took a lot of time XD.
+          I made this for us — a little map of our favourite moments together. Tap a pin to see the story,
+          photos, and where we were. Add new memories with the button in the corner.
         </p>
 
         <ul className="modal-list">
@@ -396,14 +495,17 @@ export default function App() {
   const [showForm, setShowForm] = useState(false);
   const [editingMemory, setEditingMemory] = useState(null);
 
-  // NEW: first-visit welcome
+  // Welcome (one-time)
+  const WELCOME_KEY = "mm_welcome_seen_v2";
   const [showWelcome, setShowWelcome] = useState(false);
   useEffect(() => {
-    const seen = localStorage.getItem("mm_welcome_seen_v1");
-    if (!seen) setShowWelcome(true);
+    const params = new URLSearchParams(window.location.search);
+    const force = params.get("welcome") === "1" || params.get("intro") === "1";
+    const seen = localStorage.getItem(WELCOME_KEY);
+    if (force || !seen) setShowWelcome(true);
   }, []);
   const dismissWelcome = () => {
-    localStorage.setItem("mm_welcome_seen_v1", "1");
+    localStorage.setItem(WELCOME_KEY, "1");
     setShowWelcome(false);
   };
 
@@ -549,6 +651,9 @@ export default function App() {
                       </span>
                     )}
                   </div>
+
+                  {/* NEW: comments */}
+                  <CommentsSection memoryId={memory.id} />
                 </div>
               </Popup>
             </Marker>
@@ -557,11 +662,7 @@ export default function App() {
       </MapContainer>
 
       {/* Floating "Add Memory" button (bottom-left) */}
-      <button
-        onClick={() => setShowForm((s) => !s)}
-        className="fab"
-        title="Add Memory"
-      >
+      <button onClick={() => setShowForm((s) => !s)} className="fab" title="Add Memory">
         {showForm ? "Close" : "Add Memory"}
       </button>
 
@@ -571,7 +672,7 @@ export default function App() {
         <EditMemoryForm memory={editingMemory} onClose={() => setEditingMemory(null)} />
       )}
 
-      {/* NEW: First-visit welcome modal */}
+      {/* First-visit welcome modal */}
       {showWelcome && <WelcomeModal onClose={dismissWelcome} />}
     </div>
   );
