@@ -1,5 +1,5 @@
 // src/App.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
@@ -532,6 +532,40 @@ function WelcomeModal({ onClose }) {
   );
 }
 
+/* ---------------- Timeline Slider ---------------- */
+function Timeline({ min, max, value, onChange }) {
+  // Don't render the slider if there are not enough memories with dates to form a range
+  if (min === max || !value) {
+    return null;
+  }
+
+  // Handle slider changes by converting the value back to a number
+  const handleChange = (e) => {
+    onChange(Number(e.target.value));
+  };
+
+  // Format the current date for display
+  const displayDate = new Date(value).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  return (
+    <div className="timeline-slider">
+      <label htmlFor="timeline">Memories up to: <b>{displayDate}</b></label>
+      <input
+        id="timeline"
+        type="range"
+        min={min}
+        max={max}
+        value={value}
+        onChange={handleChange}
+      />
+    </div>
+  );
+}
+
 /* ---------------- Main App ---------------- */
 export default function App() {
   const [memories, setMemories] = useState([]);
@@ -539,6 +573,7 @@ export default function App() {
   const [showForm, setShowForm] = useState(false);
   const [editingMemory, setEditingMemory] = useState(null);
   const [user, setUser] = useState(null);
+  const [timelineValue, setTimelineValue] = useState(null);
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, setUser);
     return () => unsub();
@@ -564,7 +599,7 @@ export default function App() {
     setShowWelcome(false);
   };
 
-  const initialPosition = [48.8584, 2.2945]; // Paris
+  const initialPosition = [48.8584, 2.2945]; // Set intial position
 
   useEffect(() => {
     const col = collection(db, "memories");
@@ -582,6 +617,37 @@ export default function App() {
     );
     return () => unsub();
   }, []);
+
+  // 2. Calculate the date range from your memories
+  const dateRange = useMemo(() => {
+    const dates = memories
+      .map(m => m.date && new Date(m.date).getTime())
+      .filter(Boolean); // Filter out null/undefined values
+    if (dates.length < 2) return null;
+    const min = Math.min(...dates);
+    const max = Math.max(...dates);
+    return { min, max };
+  }, [memories]);
+
+  // 3. Set the initial timeline value to the max date when memories load
+  useEffect(() => {
+    if (dateRange && timelineValue === null) {
+      setTimelineValue(dateRange.max);
+    }
+  }, [dateRange, timelineValue]);
+
+  // 4. Filter memories based on the timeline value
+  const filteredMemories = useMemo(() => {
+    if (!timelineValue || !dateRange) {
+      return memories;
+    }
+    return memories.filter(m => {
+      // Always show memories that don't have a date
+      if (!m.date) return true; 
+      // Otherwise, show them if they are on or before the slider's date
+      return new Date(m.date).getTime() <= timelineValue;
+    });
+  }, [memories, timelineValue, dateRange]);
 
   if (loading) return <div>Loading memories...</div>;
 
@@ -601,7 +667,7 @@ export default function App() {
     }
   };
 
-  return (
+return (
     <div className="page" style={{ position: "relative" }}>
       <MapContainer className="map" center={firstValidPos} zoom={13}>
         <TileLayer
@@ -609,7 +675,8 @@ export default function App() {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {memories.map((memory) => {
+        {/* This now uses the filtered list */}
+        {filteredMemories.map((memory) => { 
           const coordField =
             memory.coordinates ?? memory.Coordinates ?? memory.location ?? memory.position;
           const pos = toLatLng(coordField);
@@ -620,6 +687,7 @@ export default function App() {
 
           return (
             <Marker key={memory.id} position={pos} icon={iconForMemory(memory)} riseOnHover>
+              {/* All of your existing Popup code goes here as it was before */}
               <Popup>
                 <div style={{ maxWidth: 300 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
@@ -758,6 +826,16 @@ export default function App() {
 
       {/* First-visit welcome modal */}
       {showWelcome && <WelcomeModal onClose={dismissWelcome} />}
-    </div>
-  );
-}
+
+      {/* This is the new Timeline component being rendered */}
+            {dateRange && (
+              <Timeline
+                min={dateRange.min}
+                max={dateRange.max}
+                value={timelineValue}
+                onChange={setTimelineValue}
+              />
+            )}
+          </div>
+        );
+      }
