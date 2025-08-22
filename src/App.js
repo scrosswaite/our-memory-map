@@ -599,7 +599,6 @@ export default function App() {
     setShowWelcome(false);
   };
 
-  const initialPosition = [48.8584, 2.2945]; // Set intial position
 
   useEffect(() => {
     const col = collection(db, "memories");
