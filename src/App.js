@@ -651,10 +651,6 @@ export default function App() {
 
   if (loading) return <div>Loading memories...</div>;
 
-  const firstValidPos =
-    memories
-      .map((m) => toLatLng(m.coordinates ?? m.Coordinates ?? m.location ?? m.position ?? null))
-      .find(Boolean) || initialPosition;
 
   const handleDelete = async (id, title = "") => {
     const ok = window.confirm(`Delete "${title || "this memory"}"?`);
@@ -669,7 +665,7 @@ export default function App() {
 
 return (
     <div className="page" style={{ position: "relative" }}>
-      <MapContainer className="map" center={firstValidPos} zoom={13}>
+      <MapContainer className="map" center={[54.5260, 15.2551]} zoom={4}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
