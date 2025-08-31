@@ -368,7 +368,7 @@ textarea.memory-form__input { min-height: 88px; }
 /* --- Memory Counter --- */
 .memory-counter {
   position: absolute;
-  top: 60px; /* Adjust as needed to position below the admin button */
+  top: 80px; /* Increased from 60px to move it down */
   left: 16px;
   z-index: 1000;
   background: rgba(255, 255, 255, 0.9);
