@@ -255,7 +255,7 @@ function AddMemoryForm({ onClose }) {
       </div>
 
       <div className="memory-form__grid-2">
-        <input className="memory-form__input" placeholder="Category (anything)" value={category} onChange={(e) => setCategory(e.target.value)} />
+        <input className="memory-form__input" placeholder="Category" value={category} onChange={(e) => setCategory(e.target.value)} />
         <div className="memory-form__color memory-form__input">
           <label htmlFor="pinColor">Marker colour</label>
           <input id="pinColor" type="color" value={color} onChange={(e) => setColor(e.target.value)} title="Choose pin colour" />
@@ -268,7 +268,7 @@ function AddMemoryForm({ onClose }) {
       </div>
 
       <div className="memory-form__row">
-        <input className="memory-form__input" type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} title="Image (optional)" />
+        <input className="memory-form__input" type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} title="Image" />
       </div>
 
       <button className="memory-form__btn" disabled={saving}>{saving ? "Saving..." : "Add Marker"}</button>
@@ -420,11 +420,8 @@ function CommentsSection({ memoryId, user, ownerUid }) {
   return (
     <div style={{ marginTop: 10 }}>
       <h4 style={{ margin: "0 0 6px", fontSize: 14 }}>Comments</h4>
-
       {comments.length === 0 ? (
-        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>
-          Be the first to leave a comment ✨
-        </div>
+        null
       ) : (
         <div style={{ display: "grid", gap: 6, maxHeight: 180, overflow: "auto" }}>
           {comments.map((c) => (
@@ -464,7 +461,7 @@ function CommentsSection({ memoryId, user, ownerUid }) {
         <input
           value={author}
           onChange={(e) => setAuthor(e.target.value)}
-          placeholder="Your name (optional)"
+          placeholder="Your name "
           style={{ fontSize: 13, padding: 8, borderRadius: 8, border: "1px solid #e5e7eb" }}
         />
         <textarea
@@ -563,6 +560,15 @@ function Timeline({ min, max, value, onChange }) {
         value={value}
         onChange={handleChange}
       />
+    </div>
+  );
+}
+
+/* ---------------- Memory Counter ---------------- */
+function MemoryCounter({ count }) {
+  return (
+    <div className="memory-counter">
+      {count} {count === 1 ? 'memory' : 'memories'}
     </div>
   );
 }
@@ -785,6 +791,8 @@ return (
           );
         })}
       </MapContainer>
+
+      <MemoryCounter count={filteredMemories.length} />
 
     {/* Admin sign-in/out button (top-right) */}
     <button

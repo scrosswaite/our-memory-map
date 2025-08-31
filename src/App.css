@@ -364,3 +364,18 @@ textarea.memory-form__input { min-height: 88px; }
   width: 100%;
   cursor: pointer;
 }
+
+/* --- Memory Counter --- */
+.memory-counter {
+  position: absolute;
+  top: 60px; /* Adjust as needed to position below the admin button */
+  left: 16px;
+  z-index: 1000;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 6px 10px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
