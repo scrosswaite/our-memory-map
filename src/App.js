@@ -509,15 +509,16 @@ function WelcomeModal({ onClose }) {
 
         <h1 id="welcome-title">Welcome to Our Memory Map 💛</h1>
         <p>
-          I made this for us — a little map of our favourite moments together. Tap a pin to see the story,
-          photos, and where we were. Add new memories with the button in the corner.
+          I know how much you love collecting things from different trips and experiences to scrapbook with. 
+          I wanted to bring together that with my love (bordering special interest) of maps to create something that highlights how much our relationship has meant to me. 
+          Every marker on this map holds a different memory I'll always treasure. I hope exploring it brings back some of the joy of our relationship. Love, Sam
+          P.S. the memories will look quite congested in places so you have to zoom in quite far to see them all
         </p>
 
         <ul className="modal-list">
-          <li>🗺️ Tap pins to open photos + details</li>
-          <li>➕ “Add Memory” to drop a new pin</li>
-          <li>🎨 Choose a colour and category you like</li>
-          <li>✏️ Edit or delete from the pin’s popup</li>
+          <li>Tap markers to bring up memories</li>
+          <li>Hold down the circle on the scroll bar to change the date and the amount of memories on the map</li>
+          <li>Zoom using usual controls</li>
         </ul>
 
         <p style={{ marginTop: 8 }}>
