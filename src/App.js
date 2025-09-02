@@ -518,10 +518,6 @@ function WelcomeModal({ onClose }) {
           <li>Zoom using usual controls</li>
         </ul>
 
-        <p style={{ marginTop: 8 }}>
-          Most important: I love you. Thanks for making these memories with me. 💐
-        </p>
-
         <div className="modal-actions">
           <button className="modal-btn primary" onClick={onClose}>Start exploring</button>
         </div>
